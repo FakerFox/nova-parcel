@@ -1,0 +1,53 @@
+name: Windows installer
+on:
+  push:
+    branches: [main]
+    paths: ['windows/**', 'Resources/Bridge.js', 'Tests/bridge.test.cjs', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['windows/**', 'Resources/Bridge.js', 'Tests/bridge.test.cjs', '.github/workflows/windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+      - name: Install pinned dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Test tracking, account isolation and shared API bridge
+        run: npm test
+      - name: Test Electron on Windows
+        run: npm run smoke
+      - name: Build Windows x64 installer
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Test packaged application
+        run: node scripts/packaged-smoke.cjs
+      - name: Calculate installer checksum
+        shell: pwsh
+        run: |
+          Get-ChildItem dist/*.exe | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $($_.Name)" | Set-Content -Encoding utf8 "$($_.FullName).sha256"
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Nova-Parcel-Windows-x64
+          path: |
+            windows/dist/*.exe
+            windows/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

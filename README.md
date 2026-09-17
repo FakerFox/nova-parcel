@@ -1,8 +1,11 @@
-# Nova Parcel · macOS
+# Nova Parcel · macOS та Windows
 
-Локальний експериментальний трекер Нової пошти українською. Працює на Apple Silicon із macOS 14 або новішою.
+Локальний експериментальний трекер Нової пошти українською з описами відправлень і сповіщеннями про зміни статусу.
 
-## Збірка з вихідних файлів
+- **macOS 14+, Apple Silicon:** нативний Swift-застосунок у корені репозиторію. Інструкція нижче.
+- **Windows 10/11, x64:** [Windows-версія з таким самим оформленням](windows/README.md). [Завантажити інсталятор зі збірки GitHub Actions](https://github.com/FakerFox/nova-parcel/actions/workflows/windows.yml).
+
+## Збірка macOS із вихідних файлів
 
 Потрібні Xcode / Command Line Tools; для тестів адаптера — Node.js 18 або новіший. Сторонніх залежностей немає.
 

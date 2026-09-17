@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>Nova Parcel</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="window-bar"><span>Nova Parcel</span><div><button id="minimize" aria-label="Згорнути" title="Згорнути">−</button><button id="hide" aria-label="Сховати у трей" title="Сховати у трей">×</button></div></div>
+  <header class="header">
+    <div class="brand-icon" data-icon="box"></div>
+    <div class="brand"><strong>Nova Parcel</strong><small>НОВА ПОШТА · НЕОФІЦІЙНИЙ ВІДЖЕТ</small></div>
+    <button id="pin" class="icon-button" aria-label="Закріпити поверх вікон" title="Закріпити поверх вікон" data-icon="pin"></button>
+    <button id="settings" class="icon-button" aria-label="Налаштування" title="Налаштування" data-icon="settings"></button>
+  </header>
+  <div id="demo-banner" class="demo-banner" hidden>ДЕМО · ВИГАДАНІ ПОСИЛКИ</div>
+  <main id="content" aria-live="polite"></main>
+  <footer><span id="connection-dot" class="dot"></span><span id="last-refresh">Готовий до підключення</span><button id="refresh" class="icon-button" aria-label="Оновити" title="Оновити" data-icon="refresh"></button></footer>
+
+  <dialog id="add-dialog" aria-labelledby="add-title">
+    <form id="add-form">
+      <h2 id="add-title">Додати посилку</h2>
+      <label for="tracking-number">Номер ТТН</label><input id="tracking-number" type="text" inputmode="numeric" autocomplete="off" maxlength="30" placeholder="14 цифр" required>
+      <label for="parcel-title">Назва <span class="muted">· необов’язково</span></label><input id="parcel-title" type="text" maxlength="300" placeholder="Наприклад, «Книжки»">
+      <p id="add-error" class="error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-close="add-dialog">Скасувати</button><button id="add-submit" type="submit" class="primary-button">Відстежувати</button></div>
+    </form>
+  </dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-heading"><h2 id="settings-title">Налаштування</h2><button class="text-button" data-close="settings-dialog">Готово</button></div>
+    <p id="account-label" class="account-label"></p>
+    <div class="account-actions"><button id="account-open" class="secondary-button">Відкрити акаунт</button><button id="account-signout" class="text-button danger">Вийти</button></div>
+    <p class="hint">Вихід прибере з цього комп’ютера сесію та список посилок. Дані в Новій пошті залишаться.</p>
+    <hr>
+    <label class="toggle-row"><span>Поверх інших вікон</span><input id="setting-pin" type="checkbox" role="switch"></label>
+    <label class="toggle-row"><span>Запускати разом із Windows</span><input id="setting-autostart" type="checkbox" role="switch"></label>
+    <p id="autostart-hint" class="hint" hidden>Автозапуск доступний у встановленій версії для Windows.</p>
+    <label class="toggle-row"><span>Сповіщення про зміни</span><input id="setting-notifications" type="checkbox" role="switch"></label>
+    <button id="notification-test" class="secondary-button">Тестове сповіщення</button>
+    <p id="notification-result" class="hint" role="status"></p>
+    <p class="hint">Перевіряємо зміни кожні 5 хвилин, поки комп’ютер не спить. Після закриття вікна застосунок залишається у треї біля годинника.</p>
+    <p class="hint">Експериментальна версія. Підключення акаунта залежить від вебкабінету Нової пошти.</p>
+    <div class="settings-bottom"><span id="version"></span><button id="quit" class="text-button">Завершити роботу</button></div>
+  </dialog>
+  <div id="toast" role="status" hidden></div>
+  <script src="ui.js"></script>
+</body>
+</html>
