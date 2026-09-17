@@ -3,7 +3,7 @@
 Локальний експериментальний трекер Нової пошти українською з описами відправлень і сповіщеннями про зміни статусу.
 
 - **macOS 14+, Apple Silicon:** нативний Swift-застосунок у корені репозиторію. Інструкція нижче.
-- **Windows 10/11, x64:** [Windows-версія з таким самим оформленням](windows/README.md). [Завантажити інсталятор зі збірки GitHub Actions](https://github.com/FakerFox/nova-parcel/actions/workflows/windows.yml).
+- **Windows 10/11, x64:** [Windows-версія з таким самим оформленням](windows/README.md). [Завантажити інсталятор](https://github.com/FakerFox/nova-parcel/releases/tag/v0.2.0-windows).
 
 ## Збірка macOS із вихідних файлів
 
