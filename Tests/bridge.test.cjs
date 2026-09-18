@@ -43,5 +43,18 @@ function context({ origin = 'https://new.novaposhta.ua', subject = 'account-a', 
   r=await c.sync([], 'account-a'); assert.equal(r.rows[0].Description,'Книги'); checks++;
   c=context({incoming:[{Number:'20450000000001', Description:'  '}], trackingFields:{DescriptionOfCargo:'Посуд'}});
   r=await c.sync([], 'account-a'); assert.equal(r.rows[0].Description,'Посуд'); checks++;
+  c=context({incoming:[],outgoing:[]});
+  r=await c.sync([{number:'20450000000003',direction:'outgoing'}], 'account-a');
+  assert.equal(r.rows[0].direction,'outgoing'); checks++;
+  c=context({incoming:[{Number:'20450000000003'}]});
+  r=await c.sync([{number:'20450000000003',direction:'outgoing'}], 'account-a');
+  assert.equal(r.rows[0].direction,'incoming'); checks++;
+  c=context({incoming:[],subject:'account-b'});
+  r=await c.sync([{number:'20450000000003',direction:'outgoing'}], 'account-a');
+  assert.equal(r.rows.length,0); checks++;
+  c=context({incoming:[],outgoing:[{Number:'20450000000003'}]});
+  r=await c.sync([], 'account-a'); assert.equal(r.rows[0].direction,'outgoing'); checks++;
+  c=context({incoming:[]}); r=await c.sync(['20450000000003'], 'account-a');
+  assert.equal(r.rows[0].direction,''); checks++;
   console.log(`Bridge: ${checks} checks passed`);
 })().catch(e=>{console.error(e); process.exitCode=1});

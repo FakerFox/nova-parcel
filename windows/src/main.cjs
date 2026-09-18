@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
-const { Tracker, fromRow, ready, validNumber } = require('./core.cjs');
+const { Tracker, fromRow, ready, directionOf, delivered, validNumber } = require('./core.cjs');
 const { trustedSender } = require('./security.cjs');
 const { AuthSession } = require('./auth.cjs');
 
@@ -21,6 +21,11 @@ const iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
 let win, tray, tracker, auth, loginTimer, refreshTimer, saveTimer, closing = false;
 let preferences = { pinned: false, notifications: false, bounds: null };
 const activeNotifications = new Set();
+let revealRequest = null, revealSequence = 0;
+function revealParcel(parcel) {
+  revealRequest = { id: parcel.id, direction: directionOf(parcel), completed: delivered(parcel), sequence: ++revealSequence };
+  broadcast(); showWidget();
+}
 
 function readJSON(name) {
   try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), name), 'utf8')); } catch { return {}; }
@@ -40,7 +45,7 @@ function state() {
   return { ...tracker.snapshot(), pinned: preferences.pinned, notifications: preferences.notifications,
     notificationSupported: Notification.isSupported(), loginAtLaunch: !demo && app.isPackaged && app.getLoginItemSettings({ path: process.execPath, args: ['--background'] }).openAtLogin,
     canAutoStart: !demo && app.isPackaged && process.platform === 'win32', demo,
-    version: app.getVersion(), platform: 'Windows' };
+    version: app.getVersion(), platform: 'Windows', revealRequest };
 }
 function broadcast() { if (win && !win.isDestroyed()) win.webContents.send('nova:state', state()); }
 function showWidget() { if (!win || win.isDestroyed()) return; win.show(); if (win.isMinimized()) win.restore(); win.focus(); }
@@ -51,11 +56,14 @@ function signIn() {
   auth.show(!!tracker.accountID); stopLoginPoll();
   loginTimer = setInterval(() => tracker.refresh(true), 5000);
 }
-function showNotification(title, body) {
+function showNotification(title, body, parcelID) {
   if (demo || !preferences.notifications || !Notification.isSupported()) return;
   const notification = new Notification({ title, body, icon: iconPath });
   activeNotifications.add(notification);
-  notification.on('click', showWidget);
+  notification.on('click', () => {
+    const parcel = tracker.parcels.find(p => p.id === parcelID);
+    if (parcel) revealParcel(parcel); else showWidget();
+  });
   notification.once('close', () => activeNotifications.delete(notification));
   notification.once('failed', () => {
     activeNotifications.delete(notification);
@@ -89,7 +97,9 @@ function createWindow() {
     saveTimer = setTimeout(() => { if (!win.isDestroyed() && !win.isMinimized()) { preferences.bounds = win.getBounds(); savePreferences(); } }, 400);
   };
   win.on('moved', remember); win.on('resized', remember);
-  win.once('ready-to-show', () => { if (!smoke && !process.argv.includes('--background')) showWidget(); });
+  win.once('ready-to-show', () => {
+    if (!smoke && !process.argv.includes('--background') && (demo || process.argv.includes('--show') || (!tracker.accountID && !tracker.parcels.length))) showWidget();
+  });
   win.loadFile(htmlPath);
 }
 function handle(name, callback) {
@@ -105,12 +115,13 @@ function registerIPC() {
   handle('signout', async () => {
     if (demo) return;
     stopLoginPoll(); for (const n of activeNotifications) n.close(); activeNotifications.clear();
+    revealRequest = null;
     await tracker.signOut(); broadcast();
   });
   handle('add', async input => {
     if (demo) return { ok: false, error: 'Демо використовує лише вигадані посилки.' };
     if (typeof input?.number !== 'string' || input.number.length > 100 || typeof input?.title !== 'string' || input.title.length > 300) return { ok: false, error: 'Перевірте номер і назву посилки.' };
-    try { return { ok: await tracker.add(input.number, input.title) }; }
+    try { return { ok: await tracker.add(input.number, input.title, input.direction) }; }
     catch (error) { return { ok: false, error: error.message }; }
   });
   handle('preferences', input => {
@@ -143,14 +154,39 @@ async function smokeTest() {
       unsafeNode: typeof window.require !== 'undefined', api: Object.keys(window.nova).sort() };
   })()`);
   if (result.cards !== 2 || !result.hasDescription || !result.connected || result.unsafeNode) throw Error(`Renderer smoke check failed: ${JSON.stringify(result)}`);
+  const outgoing = await win.webContents.executeJavaScript(`(() => {
+    document.querySelector('[data-direction="outgoing"]').click();
+    const active = document.querySelectorAll('.parcel-card').length;
+    const wording = document.body.textContent.includes('ЧЕКАЄ НА ОТРИМУВАЧА');
+    document.getElementById('show-completed').click();
+    const all = document.querySelectorAll('.parcel-card').length;
+    document.querySelector('[data-add]').click();
+    const addDirection = document.getElementById('parcel-direction').value;
+    document.getElementById('add-dialog').close();
+    document.querySelector('[data-direction="incoming"]').click();
+    return {active,wording,all,addDirection};
+  })()`);
+  if (outgoing.active !== 1 || !outgoing.wording || outgoing.all !== 2 || outgoing.addDirection !== 'outgoing') throw Error(`Outgoing tabs failed: ${JSON.stringify(outgoing)}`);
+  win.hide();
+  tracker.apply([ {Number:'20450000000003', Description:'Подарунок для друга', Status:'У дорозі', StatusCode:'5', direction:'outgoing'} ]);
+  if (win.isVisible()) throw Error('Transit must not open widget');
+  tracker.apply([ {Number:'20450000000003', Description:'Подарунок для друга', Status:'Прибув у відділення', StatusCode:'7', direction:'outgoing'} ]);
+  if (!win.isVisible()) throw Error('Arrival must open widget');
+  // Let the renderer process the state broadcast before checking the tab.
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const selected = await win.webContents.executeJavaScript(`document.querySelector('[data-direction="outgoing"]').getAttribute('aria-pressed')`);
+  if (selected !== 'true') throw Error('Arrival must select outgoing tab');
+  win.hide();
+  tracker.apply([ {Number:'20450000000003', Status:'Прибув у відділення', StatusCode:'7', direction:'outgoing'} ]);
+  if (win.isVisible()) throw Error('Duplicate status must not reopen widget');
   win.hide(); if (win.isVisible()) throw Error('Hide-to-tray check failed');
   win.show(); if (!win.isVisible()) throw Error('Restore-from-tray check failed');
   win.setAlwaysOnTop(true); if (!win.isAlwaysOnTop()) throw Error('Pin check failed');
-  console.log('Nova Parcel Electron smoke test passed: cards, descriptions, preload isolation, hide/show, pin.');
+  console.log('Nova Parcel Electron smoke test passed: cards, both tabs, completed filter, add direction, arrival opens once, preload isolation, hide/show, pin.');
 }
 if (!smoke && !app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', showWidget);
+  app.on('second-instance', (_event, argv) => { if (!argv.includes('--background')) showWidget(); });
   app.on('activate', showWidget);
   app.on('window-all-closed', () => {});
   app.on('before-quit', () => {
@@ -166,13 +202,16 @@ else {
       onError: message => { tracker.error = message; tracker.changed(); }, onHide: stopLoginPoll
     });
     tracker = new Tracker({ saved: readJSON('parcels.json'), auth, persist: value => writeJSON('parcels.json', value),
-      notify: parcel => showNotification(ready(parcel) ? 'Посилка вже чекає на вас 📦' : 'Статус посилки змінився', `${parcel.title}\n${parcel.id}\n${parcel.status}`) });
+      notify: parcel => showNotification(ready(parcel) ? (directionOf(parcel) === 'outgoing' ? 'Посилка чекає на отримувача 📦' : 'Посилка вже чекає на вас 📦') : 'Статус посилки змінився', `${parcel.title}\n${parcel.id}\n${parcel.status}`, parcel.id) });
     if (demo) {
       tracker.accountID = 'demo'; tracker.lastRefresh = Date.now();
       tracker.parcels = [fromRow({ Number: '20450000000001', Description: 'Книжки на вихідні', Status: 'Прибув у відділення', StatusCode: '7', WarehouseRecipient: 'Київ · Відділення № 24' }),
-        fromRow({ Number: '20450000000002', Description: 'Нова клавіатура', Status: 'Прямує до міста отримувача', StatusCode: '5', WarehouseRecipient: 'Київ · Поштомат № 1024', ExpectedDeliveryDate: '18.09.2026' })];
+        fromRow({ Number: '20450000000002', Description: 'Нова клавіатура', Status: 'Прямує до міста отримувача', StatusCode: '5', WarehouseRecipient: 'Київ · Поштомат № 1024', ExpectedDeliveryDate: '18.09.2026' }),
+        fromRow({ Number: '20450000000003', Description: 'Подарунок для друга', Status: 'Прибув у відділення', StatusCode: '7', WarehouseRecipient: 'Львів · Відділення № 12', direction: 'outgoing' }),
+        fromRow({ Number: '20450000000004', Description: 'Настільна гра', Status: 'Відправлення отримано', StatusCode: '9', WarehouseRecipient: 'Одеса · Відділення № 8', direction: 'outgoing' })];
     }
     tracker.on('change', broadcast); tracker.on('signed-in', () => { stopLoginPoll(); auth.hide(); }); tracker.on('login-paused', stopLoginPoll);
+    tracker.on('arrival', revealParcel);
     createWindow(); registerIPC();
     tray = new Tray(process.platform === 'win32' ? path.join(__dirname, '..', 'assets', 'icon.ico') : nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 }));
     tray.setToolTip('Nova Parcel — мої посилки');

@@ -54,7 +54,12 @@ window.novaParcelSync = async function (extraNumbers, previousAccount) {
     }
     // Retain previously seen shipments so a move into the cabinet's archive does
     // not hide the final delivery transition from notifications.
-    for (const number of (previousAccount === String(claims.sub) ? extraNumbers || [] : [])) if (/^\d{14}$/.test(number)) numbers.set(number, 'incoming');
+    for (const item of (previousAccount === String(claims.sub) ? extraNumbers || [] : [])) {
+        const number = typeof item === 'string' ? item : item?.number;
+        // Keep the direction of shipments no longer listed by the cabinet.
+        // Older callers may still supply plain TTNs; their direction is unknown.
+        if (typeof number === 'string' && /^\d{14}$/.test(number)) numbers.set(number, ['incoming', 'outgoing'].includes(item?.direction) ? item.direction : '');
+    }
     try {
         for (const [method, direction] of [['getIncomingDocumentsByPhone', 'incoming'], ['getOutgoingDocumentsByPhone', 'outgoing']]) {
             let complete = false;

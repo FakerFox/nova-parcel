@@ -74,7 +74,7 @@ test('manual add in account uses authenticated bridge and starts silently', asyn
   let requested; let notifications=0;
   const store=new Tracker({saved:saved(),auth:{sync:async numbers=>{requested=numbers;return {kind:'success',accountID:'account-a',rows:[row({Number:'20450000000002'})]};}},publicTrack:()=>{throw Error('Wrong path');},notify:()=>notifications++});
   assert(await store.add('2045 0000 0000 02','Подарунок'));
-  assert(requested.includes('20450000000002')); assert.equal(store.parcels[0].title,'Подарунок'); assert.equal(notifications,0);
+  assert(requested.some(p => p.number === '20450000000002'));  assert.equal(store.parcels[0].title,'Подарунок'); assert.equal(notifications,0);
   await assert.rejects(()=>store.add('20450000000002'),/вже відстежується/);
 });
 test('public tracking batches 100, rejects HTTP and schema failures', async () => {
@@ -95,4 +95,42 @@ test('IPC accepts only the local main frame, never auth pages or subframes', () 
   assert(!trustedSender({sender:contents,senderFrame:{url}},contents,url));
   assert(!trustedSender({sender:contents,senderFrame:frame},contents,'https://new.novaposhta.ua/'));
   assert(!trustedSender({sender:{},senderFrame:frame},contents,url));
+});
+
+test('arrival opens once, other status changes and ready-to-ready transitions stay closed', async () => {
+  let next = row({StatusCode:'6'}), openings=0, notifications=0, persisted;
+  const auth={sync:async()=>({kind:'success',accountID:'account-a',rows:[next]})};
+  const store=new Tracker({saved:saved(),auth,notify:()=>notifications++,persist:s=>{persisted=JSON.parse(JSON.stringify(s));}});
+  store.on('arrival',()=>openings++);
+  await store.refresh(true); assert.equal(openings,0);
+  next=row({StatusCode:'7'}); await store.refresh(true); assert.equal(openings,1);
+  await store.refresh(true); assert.equal(openings,1);
+  next=row({StatusCode:'8',Status:'Прибув у поштомат'}); await store.refresh(true); assert.equal(openings,1);
+  const restarted=new Tracker({saved:persisted,auth}); restarted.on('arrival',()=>openings++);
+  await restarted.refresh(true); assert.equal(openings,1);
+  next=row({StatusCode:'9'}); await store.refresh(true); assert.equal(openings,1);
+  assert.equal(notifications,4);
+});
+test('initial ready baseline and account switch never auto-open', () => {
+  const store=new Tracker(); let openings=0; store.on('arrival',()=>openings++);
+  store.apply([row({StatusCode:'7'})], 'account-a');
+  store.apply([row({StatusCode:'8'})], 'account-b');
+  assert.equal(openings,0);
+});
+test('outgoing direction survives public refresh, archive and restart', async () => {
+  let requested, openings=0;
+  const store=new Tracker({saved:saved({parcels:[fromRow(row({direction:'outgoing'}))]}),auth:{sync:async items=>{
+    requested=items; return {kind:'success',accountID:'account-a',rows:[row({StatusCode:'7',direction:'outgoing'})]};
+  }}});
+  store.on('arrival',p=>{assert.equal(p.direction,'outgoing');openings++;});
+  await store.refresh(true); assert.deepEqual(requested,[{number,direction:'outgoing'}]); assert.equal(openings,1);
+  store.apply([row({StatusCode:'9'})]); assert.equal(store.parcels[0].direction,'outgoing');
+  assert.equal(restore({parcels:store.parcels}).parcels[0].direction,'outgoing');
+  store.apply([row({direction:'incoming'})]); assert.equal(store.parcels[0].direction,'incoming');
+});
+test('manual outgoing add remains outgoing after public refresh', async () => {
+  const store=new Tracker({auth:{},publicTrack:async()=>[row()]});
+  assert(await store.add(number,'','outgoing')); assert.equal(store.parcels[0].direction,'outgoing');
+  await store.refresh(true); assert.equal(store.parcels[0].direction,'outgoing');
+  await assert.rejects(()=>store.add('20450000000002','','invalid'),/напрямок/);
 });

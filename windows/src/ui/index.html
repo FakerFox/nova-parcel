@@ -22,6 +22,7 @@
   <dialog id="add-dialog" aria-labelledby="add-title">
     <form id="add-form">
       <h2 id="add-title">Додати посилку</h2>
+      <label for="parcel-direction">Напрямок</label><select id="parcel-direction"><option value="incoming">Отримання</option><option value="outgoing">Відправлення</option></select>
       <label for="tracking-number">Номер ТТН</label><input id="tracking-number" type="text" inputmode="numeric" autocomplete="off" maxlength="30" placeholder="14 цифр" required>
       <label for="parcel-title">Назва <span class="muted">· необов’язково</span></label><input id="parcel-title" type="text" maxlength="300" placeholder="Наприклад, «Книжки»">
       <p id="add-error" class="error" role="alert" hidden></p>
@@ -40,7 +41,7 @@
     <label class="toggle-row"><span>Сповіщення про зміни</span><input id="setting-notifications" type="checkbox" role="switch"></label>
     <button id="notification-test" class="secondary-button">Тестове сповіщення</button>
     <p id="notification-result" class="hint" role="status"></p>
-    <p class="hint">Перевіряємо зміни кожні 5 хвилин, поки комп’ютер не спить. Після закриття вікна застосунок залишається у треї біля годинника.</p>
+    <p class="hint">Перевіряємо зміни кожні 5 хвилин, поки комп’ютер не спить. Віджет сам відкриється, коли посилка прибуде у відділення або поштомат. Решта змін — у сповіщеннях. Відкрити вручну можна через коробку у треї.</p>
     <p class="hint">Експериментальна версія. Підключення акаунта залежить від вебкабінету Нової пошти.</p>
     <div class="settings-bottom"><span id="version"></span><button id="quit" class="text-button">Завершити роботу</button></div>
   </dialog>

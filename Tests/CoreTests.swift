@@ -44,6 +44,22 @@ struct CoreTests {
         check(ParcelMerge.apply(existing: titled.parcels, incoming: [initial]).parcels[0].title == "Манґа: том 2", "missing later description preserves known title")
         describedRow["Description"] = " \n "; describedRow["CargoDescription"] = "Настільна гра"
         check(Parcel.from(describedRow)?.title == "Настільна гра", "blank description falls back to cargo description")
+        check(Change(old: initial, new: ready).shouldOpenWidget, "arrival opens widget")
+        check(!Change(old: ready, new: textChange).shouldOpenWidget, "ready wording change does not reopen")
+        check(!Change(old: ready, new: codeChange).shouldOpenWidget, "ready 7 to 8 does not reopen")
+        check(!Change(old: ready, new: delivered).shouldOpenWidget, "pickup does not open widget")
+        check(!Change(old: initial, new: initial).shouldOpenWidget, "in transit does not open widget")
+        var outgoing = initial; outgoing.direction = "outgoing"
+        let outbound = ParcelMerge.apply(existing: [outgoing], incoming: [ready])
+        check(outbound.parcels[0].isOutgoing, "public response preserves outgoing direction")
+        check(outbound.changes[0].shouldOpenWidget, "outgoing arrival opens widget")
+        check(outbound.parcels[0].stageTitle == "ЧЕКАЄ НА ОТРИМУВАЧА", "outgoing arrival uses recipient wording")
+        let outboundSaved = SavedState(parcels: outbound.parcels, accountID: "test")
+        let outboundRestored = try JSONDecoder().decode(SavedState.self, from: JSONEncoder().encode(outboundSaved))
+        check(outboundRestored.parcels[0].isOutgoing, "direction survives restart")
+        check(ParcelMerge.apply(existing: outboundRestored.parcels, incoming: [ready]).changes.isEmpty, "arrival after restart is silent")
+        let incomingKnown = Parcel.from(row, direction: "incoming")!
+        check(!ParcelMerge.apply(existing: [outgoing], incoming: [incomingKnown]).parcels[0].isOutgoing, "explicit account direction is authoritative")
         print("Core: \(checks) checks passed")
     }
 }

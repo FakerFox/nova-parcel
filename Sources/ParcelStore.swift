@@ -16,6 +16,8 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
     @Published var loginAtLaunch = false
     @Published var awaitingLogin = false
     @Published var showCompleted = false
+    @Published var selectedDirection = "incoming"
+    @Published var focusedParcelID: String?
     @Published var isDemo = false
     @Published var notificationTestResult: String?
     var onPin: ((Bool) -> Void)?
@@ -33,8 +35,15 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NovaParcel", isDirectory: true).appendingPathComponent("parcels.json")
     }
-    var visibleParcels: [Parcel] { parcels.filter { showCompleted || !$0.isDelivered } }
-    var activeCount: Int { parcels.filter { !$0.isDelivered }.count }
+    var visibleParcels: [Parcel] { parcels.filter { $0.tab == selectedDirection && (showCompleted || !$0.isDelivered) } }
+    func activeCount(_ direction: String) -> Int { parcels.filter { $0.tab == direction && !$0.isDelivered }.count }
+    private var trackedNumbers: [[String: String]] { parcels.map { ["number": $0.id, "direction": $0.tab] } }
+    func reveal(_ parcel: Parcel) {
+        selectedDirection = parcel.tab
+        if parcel.isDelivered { showCompleted = true }
+        focusedParcelID = parcel.id
+        onShow?()
+    }
 
     override init() {
         super.init()
@@ -78,7 +87,7 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
         defer { busy = false }
         do {
             if connected || awaitingLogin {
-                let result = try await auth.sync(numbers: parcels.map(\.id), accountID: accountID)
+                let result = try await auth.sync(numbers: trackedNumbers, accountID: accountID)
                 guard generation == currentGeneration else { return }
                 switch result["kind"] as? String {
                 case "success":
@@ -90,7 +99,7 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
                     }
                     accountID = newID; connected = true; awaitingLogin = false; refreshingSession = false
                     loginTimer?.invalidate(); loginTimer = nil
-                    let incoming = rows.compactMap { Parcel.from($0, direction: $0["direction"] as? String ?? "incoming") }
+                    let incoming = rows.compactMap { Parcel.from($0, direction: $0["direction"] as? String ?? "") }
                     guard rows.isEmpty || !incoming.isEmpty else { throw TrackingError.message("Формат статусів змінився. Збережені дані залишилися без змін.") }
                     merge(incoming)
                     if wasAwaitingLogin { auth.hideLogin() }
@@ -122,7 +131,7 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
         }
     }
 
-    func add(number raw: String, title: String) async -> Bool {
+    func add(number raw: String, title: String, direction: String) async -> Bool {
         let number = Parcel.normalizedNumber(raw)
         guard Parcel.validNumber(number) else { error = "ТТН має містити 14 цифр."; return false }
         guard !parcels.contains(where: { $0.id == number }) else { error = "Ця посилка вже відстежується."; return false }
@@ -131,12 +140,19 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
         let currentGeneration = generation
         defer { busy = false }
         do {
-            var incoming = try await TrackingAPI().track([number])
+            var incoming: [Parcel]
+            if connected {
+                let result = try await auth.sync(numbers: trackedNumbers + [["number": number, "direction": direction]], accountID: accountID)
+                guard result["kind"] as? String == "success", result["accountID"] as? String == accountID,
+                      let rows = result["rows"] as? [[String: Any]] else { throw TrackingError.message("Відкрийте акаунт і повторіть вхід.") }
+                incoming = rows.compactMap { Parcel.from($0, direction: $0["direction"] as? String ?? "") }.filter { $0.id == number }
+            } else { incoming = try await TrackingAPI().track([number]) }
             guard generation == currentGeneration else { return false }
             guard incoming.count == 1 else { throw TrackingError.message("Посилку не знайдено. Перевірте номер ТТН.") }
             incoming[0].isManual = true
+            if incoming[0].direction.isEmpty { incoming[0].direction = direction }
             if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { incoming[0].title = title }
-            merge(incoming); lastRefresh = Date(); error = nil; persist()
+            merge(incoming); selectedDirection = incoming[0].tab; lastRefresh = Date(); error = nil; persist()
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
@@ -145,15 +161,17 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
         let result = ParcelMerge.apply(existing: parcels, incoming: incoming)
         parcels = result.parcels
         for change in result.changes { sendNotification(change) }
+        if let arrival = result.changes.first(where: { $0.shouldOpenWidget }) { reveal(arrival.new) }
     }
     private func sendNotification(_ change: Change) {
         guard notificationsGranted else { return }
         let content = UNMutableNotificationContent()
-        content.title = change.new.isReady ? "Посилка вже чекає на вас 📦" : "Статус посилки змінився"
+        content.title = change.new.isReady ? (change.new.isOutgoing ? "Посилка чекає на отримувача 📦" : "Посилка вже чекає на вас 📦") : "Статус посилки змінився"
         content.subtitle = change.new.title
         content.body = "\(change.new.id)\n\(change.new.status)"
         content.sound = .default
         content.threadIdentifier = change.new.id
+        content.userInfo = ["parcelID": change.new.id]
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { [weak self] error in
             if error != nil { Task { @MainActor in self?.error = "macOS не доставила сповіщення. Перевірте налаштування сповіщень." } }
@@ -190,6 +208,7 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
         loginTimer?.invalidate(); loginTimer = nil
         awaitingLogin = false; connected = false; accountID = nil
         parcels = []; lastRefresh = nil; error = nil; refreshingSession = false
+        selectedDirection = "incoming"; focusedParcelID = nil
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         persist()
@@ -214,13 +233,21 @@ final class ParcelStore: NSObject, ObservableObject, UNUserNotificationCenterDel
         } catch { self.error = "Не вдалося зберегти посилки на цьому Mac." }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .sound, .list] }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async { await MainActor.run { self.onShow?() } }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let id = response.notification.request.content.userInfo["parcelID"] as? String
+        await MainActor.run {
+            if let parcel = self.parcels.first(where: { $0.id == id }) { self.reveal(parcel) }
+            else { self.onShow?() }
+        }
+    }
 
     private func loadDemo() {
         isDemo = true; connected = true; notificationsGranted = true; lastRefresh = Date()
         parcels = [
             Parcel(id: "20450000000001", title: "Книжки на вихідні", status: "Прибув у відділення", code: "7", origin: "Львів", destination: "Київ · Відділення № 24", expected: "", updatedAt: Date(), direction: "incoming"),
-            Parcel(id: "20450000000002", title: "Нова клавіатура", status: "Прямує до міста отримувача", code: "5", origin: "Одеса", destination: "Київ · Поштомат № 1024", expected: "18.09.2026", updatedAt: Date(), direction: "incoming")
+            Parcel(id: "20450000000002", title: "Нова клавіатура", status: "Прямує до міста отримувача", code: "5", origin: "Одеса", destination: "Київ · Поштомат № 1024", expected: "18.09.2026", updatedAt: Date(), direction: "incoming"),
+            Parcel(id: "20450000000003", title: "Подарунок для друга", status: "Прибув у відділення", code: "7", origin: "Київ", destination: "Львів · Відділення № 12", expected: "", updatedAt: Date(), direction: "outgoing"),
+            Parcel(id: "20450000000004", title: "Настільна гра", status: "Відправлення отримано", code: "9", origin: "Київ", destination: "Одеса · Відділення № 8", expected: "", updatedAt: Date(), direction: "outgoing")
         ]
     }
 }

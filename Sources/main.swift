@@ -63,7 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Завершити Nova Parcel", action: #selector(quitApp), keyEquivalent: "q"); quit.target = self; menu.addItem(quit)
         statusItem.menu = menu
-        if !CommandLine.arguments.contains("--background") { showWidget() }
+        // A configured tracker starts quietly, including launch at login.
+        // Explicit menu/reopen actions always show the widget.
+        if !CommandLine.arguments.contains("--background") && (store.isDemo || CommandLine.arguments.contains("--show") || (!store.connected && store.parcels.isEmpty)) { showWidget() }
     }
     @objc func showWidget() { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil); Task { await store.updateNotificationPermission() } }
     @objc func openAccount() { store.signIn() }

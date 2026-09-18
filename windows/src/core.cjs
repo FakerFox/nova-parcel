@@ -5,6 +5,8 @@ const validNumber = value => typeof value === 'string' && /^[0-9]{14}$/.test(val
 const normalizedNumber = value => String(value ?? '').replace(/[\s-]/g, '');
 const delivered = parcel => ['9', '10', '11'].includes(parcel.code);
 const ready = parcel => ['7', '8'].includes(parcel.code);
+const arrived = change => !ready(change.old) && ready(change.new);
+const directionOf = parcel => parcel.direction === 'outgoing' ? 'outgoing' : 'incoming';
 const fingerprint = parcel => `${parcel.code}|${parcel.status.trim()}`;
 const text = (row, ...keys) => {
   for (const key of keys) {
@@ -23,13 +25,14 @@ function fromRow(row, now = Date.now()) {
     status, code, origin: text(row, 'CitySender', 'CitySenderDescription'),
     destination: text(row, 'WarehouseRecipient', 'RecipientAddress', 'RecipientAddressDescription', 'CityRecipient'),
     expected: text(row, 'ScheduledDeliveryDate', 'ExpectedDeliveryDate'), updatedAt: now,
-    direction: row.direction === 'outgoing' ? 'outgoing' : 'incoming', isManual: false };
+    direction: ['incoming', 'outgoing'].includes(row.direction) ? row.direction : '', isManual: false };
 }
 function merge(existing, incoming) {
   const map = new Map(existing.map(p => [p.id, p]));
   const changes = [];
   for (const item of incoming) {
     const parcel = { ...item }, old = map.get(parcel.id);
+    if (!['incoming', 'outgoing'].includes(parcel.direction)) parcel.direction = directionOf(old || {});
     if (old) {
       parcel.isManual = old.isManual;
       if (parcel.title === 'Посилка') parcel.title = old.title;
@@ -43,7 +46,7 @@ function restore(saved) {
   const parcels = Array.isArray(saved?.parcels) ? saved.parcels.flatMap(p => {
     const parcel = fromRow({ Number: p?.id, Description: p?.title, Status: p?.status, StatusCode: p?.code,
       CitySender: p?.origin, RecipientAddress: p?.destination, ExpectedDeliveryDate: p?.expected, direction: p?.direction }, Number(p?.updatedAt) || 0);
-    return parcel ? [{ ...parcel, isManual: p.isManual === true }] : [];
+    return parcel ? [{ ...parcel, direction: directionOf(parcel), isManual: p.isManual === true }] : [];
   }) : [];
   return { parcels, accountID: typeof saved?.accountID === 'string' && saved.accountID ? saved.accountID : null,
     lastRefresh: Number.isFinite(saved?.lastRefresh) ? saved.lastRefresh : null };
@@ -87,6 +90,8 @@ class Tracker extends EventEmitter {
     this.lastRefresh = this.now(); this.error = null; this.retryCount = 0;
     this.save();
     for (const change of result.changes) this.notify(change.new);
+    const arrival = result.changes.find(arrived);
+    if (arrival) this.emit('arrival', arrival.new);
   }
   async refresh(force = false) {
     if (this.busy || (!force && this.now() - this.lastAttempt < Math.min(3600000, 300000 * 2 ** this.retryCount))) return;
@@ -95,7 +100,7 @@ class Tracker extends EventEmitter {
     this.busy = true; this.lastAttempt = this.now(); this.changed();
     try {
       if (this.accountID || this.awaitingLogin) {
-        const result = await this.auth.sync(this.parcels.map(p => p.id), this.accountID);
+        const result = await this.auth.sync(this.parcels.map(p => ({number:p.id, direction:directionOf(p)})), this.accountID);
         if (generation !== this.generation) return;
         if (result?.kind === 'success') {
           if (typeof result.accountID !== 'string' || !result.accountID) throw Error('Неповна відповідь кабінету.');
@@ -122,7 +127,8 @@ class Tracker extends EventEmitter {
       }
     } finally { this.busy = false; this.changed(); }
   }
-  async add(raw, title = '') {
+  async add(raw, title = '', direction = 'incoming') {
+    if (!['incoming', 'outgoing'].includes(direction)) throw Error('Оберіть напрямок посилки.');
     const number = normalizedNumber(raw);
     if (!validNumber(number)) throw Error('ТТН має містити 14 цифр.');
     if (this.parcels.some(p => p.id === number)) throw Error('Ця посилка вже відстежується.');
@@ -131,7 +137,7 @@ class Tracker extends EventEmitter {
     try {
       let rows;
       if (this.accountID) {
-        const result = await this.auth.sync([...this.parcels.map(p => p.id), number], this.accountID);
+        const result = await this.auth.sync([...this.parcels.map(p => ({number:p.id, direction:directionOf(p)})), {number, direction}], this.accountID);
         if (result?.kind !== 'success' || result.accountID !== this.accountID) throw Error('Відкрийте акаунт і повторіть вхід.');
         rows = result.rows;
       } else rows = await this.publicTrack([number]);
@@ -139,6 +145,7 @@ class Tracker extends EventEmitter {
       const parcel = Array.isArray(rows) ? rows.map(row => fromRow(row, this.now())).find(p => p?.id === number) : null;
       if (!parcel) throw Error('Посилку не знайдено. Перевірте ТТН або увійдіть до акаунта.');
       parcel.isManual = true;
+      if (!parcel.direction) parcel.direction = direction;
       if (String(title).trim()) parcel.title = String(title).trim().slice(0, 300);
       this.parcels = merge(this.parcels, [parcel]).parcels;
       this.error = null; this.lastRefresh = this.now(); this.save(); return true;
@@ -150,4 +157,4 @@ class Tracker extends EventEmitter {
     this.save(); this.changed(); await this.auth.clear();
   }
 }
-module.exports = { validNumber, normalizedNumber, delivered, ready, fingerprint, fromRow, merge, restore, track, Tracker };
+module.exports = { validNumber, normalizedNumber, delivered, ready, arrived, directionOf, fingerprint, fromRow, merge, restore, track, Tracker };

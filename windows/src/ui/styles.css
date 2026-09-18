@@ -1,10 +1,10 @@
 :root { color-scheme: light; --accent:#f5453b; --ink:#1f2129; --muted:#737880; --canvas:#f6f4f1; font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif; color:var(--ink); background:var(--canvas); font-size:13px; }
 * { box-sizing:border-box; }
 body { margin:0; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
-button,input { font:inherit; }
+button,input,select { font:inherit; }
 button { cursor:pointer; border:0; color:inherit; }
 button:disabled { opacity:.45; cursor:default; }
-button:focus-visible,input:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 button { transition:background .12s,color .12s; }
 svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
 [hidden] { display:none!important; }
@@ -88,7 +88,7 @@ dialog { width:calc(100% - 28px); max-width:420px; max-height:calc(100vh - 48px)
 dialog::backdrop { background:#25242435; backdrop-filter:blur(3px); }
 dialog h2 { margin:0 0 20px; font-size:22px; letter-spacing:-.6px; }
 dialog label:not(.toggle-row) { display:block; margin:14px 0 7px; font-size:12px; }
-dialog input[type=text] { width:100%; background:#fff; border:1px solid #dedbd5; border-radius:8px; padding:11px 12px; color:var(--ink); }
+dialog input[type=text],dialog select { width:100%; background:#fff; border:1px solid #dedbd5; border-radius:8px; padding:11px 12px; color:var(--ink); }
 .muted,.hint { color:var(--muted); }
 .hint { font-size:11px; line-height:1.6; margin:12px 0; }
 .dialog-actions { display:flex; align-items:center; justify-content:space-between; margin-top:22px; gap:12px; }
@@ -107,3 +107,8 @@ input[type=checkbox]:disabled { opacity:.4; cursor:default; }
 .settings-bottom { display:flex; align-items:center; justify-content:space-between; font-size:10px; color:var(--muted); margin-top:20px; }
 #toast { position:fixed; left:24px; right:24px; bottom:58px; border-radius:10px; padding:12px; background:var(--ink); color:white; box-shadow:0 4px 20px #0002; font-size:12px; text-align:center; }
 @media (prefers-reduced-motion:reduce) { * { transition:none!important; } }
+
+.direction-tabs { display:flex; gap:4px; margin:0 24px 12px; padding:4px; border-radius:12px; background:#1f21290b; flex-shrink:0; }
+.direction-tab { flex:1; display:flex; align-items:center; justify-content:center; gap:5px; padding:10px 2px; font-size:11px; font-weight:600; border-radius:9px; color:var(--muted); background:transparent; }
+.direction-tab.selected { background:#fff; color:var(--ink); box-shadow:0 1px 3px #00000005; }
+.tab-count { color:var(--accent); font-size:10px; font-weight:700; }

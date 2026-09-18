@@ -14,11 +14,16 @@ struct Parcel: Codable, Identifiable, Equatable {
 
     var isDelivered: Bool { ["9", "10", "11"].contains(code) }
     var isReady: Bool { ["7", "8"].contains(code) }
+    var isOutgoing: Bool { direction == "outgoing" }
+    var tab: String { isOutgoing ? "outgoing" : "incoming" }
+    var stageTitle: String {
+        isReady ? (isOutgoing ? "ЧЕКАЄ НА ОТРИМУВАЧА" : "МОЖНА ЗАБИРАТИ") : isDelivered ? "ОТРИМАНО" : ["1", "2"].contains(code) ? "ОЧІКУЄ ВІДПРАВКИ" : "У ДОРОЗІ"
+    }
     var symbol: String { isDelivered ? "checkmark.circle.fill" : isReady ? "shippingbox.fill" : "truck.box.fill" }
     var phase: Int { isDelivered ? 3 : isReady ? 2 : ["1", "2"].contains(code) ? 0 : 1 }
     var fingerprint: String { code + "|" + status.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    static func from(_ row: [String: Any], direction: String = "incoming", now: Date = Date()) -> Parcel? {
+    static func from(_ row: [String: Any], direction: String = "", now: Date = Date()) -> Parcel? {
         func value(_ keys: String...) -> String {
             for key in keys {
                 if let s = row[key] as? String {
@@ -50,7 +55,10 @@ struct Parcel: Codable, Identifiable, Equatable {
     }
 }
 
-struct Change: Equatable { var old: Parcel; var new: Parcel }
+struct Change: Equatable {
+    var old: Parcel; var new: Parcel
+    var shouldOpenWidget: Bool { !old.isReady && new.isReady }
+}
 struct MergeResult { var parcels: [Parcel]; var changes: [Change] }
 
 enum ParcelMerge {
@@ -58,6 +66,7 @@ enum ParcelMerge {
         var map = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
         var changes: [Change] = []
         for var parcel in incoming {
+            if !["incoming", "outgoing"].contains(parcel.direction) { parcel.direction = map[parcel.id]?.tab ?? "incoming" }
             if let old = map[parcel.id] {
                 parcel.isManual = old.isManual
                 if parcel.title == "Посилка" { parcel.title = old.title }

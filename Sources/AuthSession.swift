@@ -58,7 +58,7 @@ final class AuthSession: NSObject, WKNavigationDelegate, WKUIDelegate {
         loginWindow?.makeKeyAndOrderFront(nil)
     }
 
-    func sync(numbers: [String], accountID: String?) async throws -> [String: Any] {
+    func sync(numbers: [[String: String]], accountID: String?) async throws -> [String: Any] {
         guard let webView else { return ["kind": "login"] }
         guard webView.url?.host == "new.novaposhta.ua" else { return ["kind": "login"] }
         let value = try await webView.callAsyncJavaScript(

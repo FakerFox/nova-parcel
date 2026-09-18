@@ -43,7 +43,7 @@ class AuthSession {
     const contents = this.window.webContents;
     if (contents.isLoadingMainFrame()) return { kind: 'loading' };
     if (!cabinetURL(contents.getURL())) return { kind: 'login' };
-    const safeNumbers = numbers.filter(validNumber);
+    const safeNumbers = numbers.filter(item => validNumber(item?.number)).map(item => ({number:item.number, direction:item.direction === 'outgoing' ? 'outgoing' : 'incoming'}));
     // This executes only in the official origin. No preload/native bridge is
     // present in this window, and the returned object contains no credentials.
     return contents.executeJavaScript(`(async () => { ${this.bridge}\nreturn await window.novaParcelSync(${JSON.stringify(safeNumbers)}, ${JSON.stringify(accountID)}); })()`);
